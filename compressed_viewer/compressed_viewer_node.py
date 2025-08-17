@@ -18,16 +18,19 @@ from std_msgs.msg import Header
 # Import compressed point cloud messages from pointcloud_compressor package
 # These need to be built first with colcon build
 try:
-    from pointcloud_compressor.msg import CompressedPointCloud
+    from pointcloud_compressor.msg import CompressedPointCloud, PatternDictionary
 except ImportError:
     # Fallback for development/testing
     print("Warning: pointcloud_compressor messages not found. Using mock message.")
     CompressedPointCloud = None
+    PatternDictionary = None
 
 # Local modules
 from .decompressor import Decompressor
 from .visualizer import PointCloudVisualizer
 from .statistics_display import StatisticsDisplay
+from .pattern_dictionary_decompressor import PatternDictionaryDecompressor
+from .pattern_marker_visualizer import PatternMarkerVisualizer
 
 
 class CompressedViewerNode(Node):
@@ -39,13 +42,18 @@ class CompressedViewerNode(Node):
         
         # Declare parameters
         self.declare_parameter('input_topic', 'compressed_pointcloud')
+        self.declare_parameter('pattern_dictionary_topic', 'pattern_dictionary')
         self.declare_parameter('pointcloud_topic', 'decompressed_pointcloud')
         self.declare_parameter('markers_topic', 'visualization_markers')
+        self.declare_parameter('pattern_markers_topic', 'pattern_markers')
         self.declare_parameter('statistics_topic', 'statistics_markers')
         self.declare_parameter('frame_id', 'map')
         self.declare_parameter('visualization_mode', 'points')  # points, voxels, both
         self.declare_parameter('show_statistics', True)
         self.declare_parameter('show_bounding_box', True)
+        self.declare_parameter('show_pattern_visualization', True)
+        self.declare_parameter('pattern_spacing', 3.0)
+        self.declare_parameter('pattern_voxel_size', 0.1)
         self.declare_parameter('point_size', 0.01)
         self.declare_parameter('point_color_r', 0.0)
         self.declare_parameter('point_color_g', 1.0)
@@ -54,13 +62,18 @@ class CompressedViewerNode(Node):
         
         # Get parameters
         self.input_topic = self.get_parameter('input_topic').value
+        self.pattern_dictionary_topic = self.get_parameter('pattern_dictionary_topic').value
         self.pointcloud_topic = self.get_parameter('pointcloud_topic').value
         self.markers_topic = self.get_parameter('markers_topic').value
+        self.pattern_markers_topic = self.get_parameter('pattern_markers_topic').value
         self.statistics_topic = self.get_parameter('statistics_topic').value
         self.frame_id = self.get_parameter('frame_id').value
         self.visualization_mode = self.get_parameter('visualization_mode').value
         self.show_statistics = self.get_parameter('show_statistics').value
         self.show_bounding_box = self.get_parameter('show_bounding_box').value
+        self.show_pattern_visualization = self.get_parameter('show_pattern_visualization').value
+        self.pattern_spacing = self.get_parameter('pattern_spacing').value
+        self.pattern_voxel_size = self.get_parameter('pattern_voxel_size').value
         self.point_size = self.get_parameter('point_size').value
         
         point_color = (
@@ -75,6 +88,8 @@ class CompressedViewerNode(Node):
         self.visualizer = PointCloudVisualizer(frame_id=self.frame_id)
         self.statistics_display = StatisticsDisplay()
         self.statistics_display.frame_id = self.frame_id
+        self.pattern_decompressor = PatternDictionaryDecompressor()
+        self.pattern_visualizer = PatternMarkerVisualizer(frame_id=self.frame_id)
         
         # QoS settings
         qos = QoSProfile(
@@ -83,7 +98,7 @@ class CompressedViewerNode(Node):
             depth=10
         )
         
-        # Create subscriber
+        # Create subscribers
         if CompressedPointCloud is not None:
             self.compressed_sub = self.create_subscription(
                 CompressedPointCloud,
@@ -93,6 +108,16 @@ class CompressedViewerNode(Node):
             )
         else:
             self.get_logger().warn("CompressedPointCloud message not available")
+            
+        if PatternDictionary is not None:
+            self.pattern_sub = self.create_subscription(
+                PatternDictionary,
+                self.pattern_dictionary_topic,
+                self.pattern_dictionary_callback,
+                qos
+            )
+        else:
+            self.get_logger().warn("PatternDictionary message not available")
         
         # Create publishers
         self.pointcloud_pub = self.create_publisher(
@@ -104,6 +129,12 @@ class CompressedViewerNode(Node):
         self.markers_pub = self.create_publisher(
             MarkerArray,
             self.markers_topic,
+            qos
+        )
+        
+        self.pattern_markers_pub = self.create_publisher(
+            MarkerArray,
+            self.pattern_markers_topic,
             qos
         )
         
@@ -119,9 +150,10 @@ class CompressedViewerNode(Node):
         self.point_color = point_color
         
         self.get_logger().info(f"Compressed Viewer Node initialized")
-        self.get_logger().info(f"Subscribing to: {self.input_topic}")
-        self.get_logger().info(f"Publishing to: {self.pointcloud_topic}, {self.markers_topic}")
+        self.get_logger().info(f"Subscribing to: {self.input_topic}, {self.pattern_dictionary_topic}")
+        self.get_logger().info(f"Publishing to: {self.pointcloud_topic}, {self.markers_topic}, {self.pattern_markers_topic}")
         self.get_logger().info(f"Visualization mode: {self.visualization_mode}")
+        self.get_logger().info(f"Pattern visualization: {self.show_pattern_visualization}")
         
     def compressed_callback(self, msg: 'CompressedPointCloud'):
         """
@@ -223,10 +255,83 @@ class CompressedViewerNode(Node):
             import traceback
             self.get_logger().error(traceback.format_exc())
             
+    def pattern_dictionary_callback(self, msg: 'PatternDictionary'):
+        """
+        Callback for PatternDictionary messages
+        
+        Args:
+            msg: PatternDictionary message
+        """
+        if not self.show_pattern_visualization:
+            return
+            
+        self.get_logger().info(f"Received PatternDictionary with {msg.num_patterns} patterns")
+        
+        try:
+            # Start timing
+            start_time = time.time()
+            
+            # Decompress pattern dictionary into 3D boolean arrays
+            patterns = self.pattern_decompressor.decompress_pattern_dictionary(
+                msg, 
+                validate_checksum=True
+            )
+            
+            # Calculate decompression time
+            decompression_time = time.time() - start_time
+            
+            self.get_logger().info(
+                f"Decompressed {len(patterns)} patterns in {decompression_time:.3f}s"
+            )
+            
+            if len(patterns) > 0:
+                # Create pattern markers
+                pattern_markers = self.pattern_visualizer.create_pattern_markers(
+                    patterns,
+                    pattern_spacing=self.pattern_spacing,
+                    voxel_size=self.pattern_voxel_size
+                )
+                
+                # Publish pattern markers
+                self.pattern_markers_pub.publish(pattern_markers)
+                self.get_logger().info(f"Published {len(pattern_markers.markers)} pattern markers")
+                
+                # Create info text
+                info_text = f"Pattern Dictionary: {len(patterns)} patterns\n"
+                for i, pattern in enumerate(patterns):
+                    voxel_count = int(np.sum(pattern))
+                    info_text += f"Pattern {i}: {voxel_count} voxels\n"
+                
+                # Create and publish info markers
+                info_markers = self.pattern_visualizer.create_info_markers(
+                    patterns,
+                    info_text,
+                    position=(0.0, -2.0, 2.0)
+                )
+                
+                # Combine pattern markers and info markers
+                combined_markers = MarkerArray()
+                combined_markers.markers.extend(pattern_markers.markers)
+                combined_markers.markers.extend(info_markers.markers)
+                
+                self.pattern_markers_pub.publish(combined_markers)
+                
+            else:
+                self.get_logger().warn("No patterns found in PatternDictionary")
+                
+        except Exception as e:
+            self.get_logger().error(f"Error processing PatternDictionary message: {str(e)}")
+            import traceback
+            self.get_logger().error(traceback.format_exc())
+            
     def clear_visualization(self):
         """Clear all visualization markers"""
         clear_markers = self.visualizer.clear_markers()
         self.markers_pub.publish(clear_markers)
+        
+        # Clear pattern markers
+        pattern_clear_markers = self.pattern_visualizer.clear_markers()
+        self.pattern_markers_pub.publish(pattern_clear_markers)
         
         stats_clear = MarkerArray()
         stats_clear.markers = clear_markers.markers.copy()

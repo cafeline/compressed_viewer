@@ -31,8 +31,9 @@ def generate_launch_description():
     viewer_pkg_dir = get_package_share_directory('compressed_viewer')
     
     # Configuration files
-    compressor_config = os.path.join(compressor_pkg_dir, 'config', 'compressor_params.yaml')
+    compressor_config = os.path.join(compressor_pkg_dir, 'config', 'pointcloud_compressor_params.yaml')
     viewer_config = os.path.join(viewer_pkg_dir, 'config', 'viewer_params.yaml')
+    demo_config = os.path.join(viewer_pkg_dir, 'config', 'demo_params.yaml')
     rviz_config = os.path.join(viewer_pkg_dir, 'rviz', 'compressed_viewer.rviz')
     
     # Declare launch arguments
@@ -79,29 +80,54 @@ def generate_launch_description():
         description='Use simulation clock'
     )
     
+    config_file_arg = DeclareLaunchArgument(
+        'config_file',
+        default_value=demo_config,
+        description='Path to configuration file (default: demo_params.yaml)'
+    )
+    
     # Pointcloud compressor node (using OpaqueFunction for conditional input_file)
     def create_compressor_node(context):
         # Determine input file (pcd_file takes precedence for backward compatibility)
         pcd_file = LaunchConfiguration('pcd_file').perform(context)
         input_file = LaunchConfiguration('input_file').perform(context)
         
-        final_input_file = pcd_file if pcd_file else input_file
+        # Only override input_file if explicitly provided via command line
+        override_params = {'use_sim_time': LaunchConfiguration('use_sim_time')}
+        
+        # Check if input_file was changed from default
+        if pcd_file:
+            override_params['input_file'] = pcd_file
+        elif input_file != '/tmp/sample.pcd':  # Only override if not default
+            override_params['input_file'] = input_file
+            
+        # Only override compression parameters if they were explicitly set
+        voxel_size = LaunchConfiguration('voxel_size').perform(context)
+        block_size = LaunchConfiguration('block_size').perform(context)
+        target_patterns = LaunchConfiguration('target_patterns').perform(context)
+        
+        if voxel_size != '0.01':  # Default value
+            override_params['voxel_size'] = LaunchConfiguration('voxel_size')
+        if block_size != '4':  # Default value
+            override_params['block_size'] = LaunchConfiguration('block_size')
+        if target_patterns != '256':  # Default value
+            override_params['target_patterns'] = LaunchConfiguration('target_patterns')
+            
+        # Always set these publishing parameters
+        override_params.update({
+            'publish_once': True,
+            'publish_patterns': True,
+            'output_topic': 'compressed_pointcloud',
+            'pattern_topic': 'pattern_dictionary'
+        })
         
         return [Node(
             package='pointcloud_compressor',
             executable='pointcloud_compressor_node',
             name='pointcloud_compressor_node',
             parameters=[
-                compressor_config,
-                {
-                    'use_sim_time': LaunchConfiguration('use_sim_time'),
-                    'input_file': final_input_file,
-                    'voxel_size': LaunchConfiguration('voxel_size'),
-                    'block_size': LaunchConfiguration('block_size'),
-                    'target_patterns': LaunchConfiguration('target_patterns'),
-                    'publish_once': True,
-                    'output_topic': 'compressed_pointcloud'
-                }
+                LaunchConfiguration('config_file'),
+                override_params
             ],
             output='screen',
             emulate_tty=True
@@ -118,13 +144,12 @@ def generate_launch_description():
                 executable='compressed_viewer_node',
                 name='compressed_viewer_node',
                 parameters=[
-                    viewer_config,
+                    LaunchConfiguration('config_file'),
                     {
                         'use_sim_time': LaunchConfiguration('use_sim_time'),
-                        'topics.input_topic': 'compressed_pointcloud',
-                        'visualization.frame_id': 'map',
-                        'visualization.show_statistics': True,
-                        'visualization.show_bounding_box': True
+                        'input_topic': 'compressed_pointcloud',
+                        'pattern_dictionary_topic': 'pattern_dictionary',
+                        'frame_id': 'map'
                     }
                 ],
                 output='screen',
@@ -168,6 +193,7 @@ def generate_launch_description():
     ld.add_action(target_patterns_arg)
     ld.add_action(launch_rviz_arg)
     ld.add_action(use_sim_time_arg)
+    ld.add_action(config_file_arg)
     
     # Add nodes
     ld.add_action(static_tf_node)

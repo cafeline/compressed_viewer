@@ -1,0 +1,87 @@
+# Demo configuration for compressed viewer with pattern visualization
+# This configuration is optimized for demonstration purposes
+
+pointcloud_compressor_node:
+  ros__parameters:
+    # Input/Output settings
+    input_file: "/home/ryo/tsudanuma/maps/tsudanuma-challenge-all.ply"
+    output_prefix: "/tmp/compressed_demo"
+
+    # Compression settings
+    voxel_size: 1.0
+    block_size: 8
+    target_patterns: 128
+    use_8bit_indices: true
+
+    # Publishing settings
+    publish_once: true
+    publish_patterns: true
+    output_topic: "compressed_pointcloud"
+    pattern_topic: "pattern_dictionary"
+
+    # Performance settings
+    optimization_iterations: 5
+    max_compression_time: 30.0
+
+    # Logging
+    verbose_output: true
+    print_statistics: true
+
+compressed_viewer_node:
+  ros__parameters:
+    # Input topics
+    input_topic: "compressed_pointcloud"
+    pattern_dictionary_topic: "pattern_dictionary"
+
+    # Output topics
+    pointcloud_topic: "decompressed_pointcloud"
+    markers_topic: "visualization_markers"
+    pattern_markers_topic: "pattern_markers"
+    statistics_topic: "statistics_markers"
+
+    # Frame settings
+    frame_id: "map"
+
+    # Visualization modes
+    visualization_mode: "both"  # points, voxels, both
+    show_statistics: true
+    show_bounding_box: true
+    show_pattern_visualization: true
+
+    # Pattern visualization settings
+    pattern_spacing: 2.5          # Distance between patterns in meters
+    pattern_voxel_size: 0.08      # Size of voxels in pattern visualization
+    pattern_color_mode: "auto"    # auto, custom, rainbow
+
+    # Point cloud visualization settings
+    point_size: 0.02
+    point_color_r: 0.0
+    point_color_g: 1.0
+    point_color_b: 0.0
+    point_color_a: 0.8
+
+    # Bounding box settings
+    bbox_color_r: 1.0
+    bbox_color_g: 1.0
+    bbox_color_b: 0.0
+    bbox_color_a: 0.5
+    bbox_line_width: 0.02
+
+    # Statistics display settings
+    stats_position_x: 2.0
+    stats_position_y: 0.0
+    stats_position_z: 1.5
+    stats_text_size: 0.15
+    stats_text_color_r: 1.0
+    stats_text_color_g: 1.0
+    stats_text_color_b: 1.0
+    stats_text_color_a: 1.0
+
+    # Performance settings
+    max_points_display: 100000
+    marker_lifetime: 0.0  # 0 = permanent
+
+    # Quality of Service
+    qos_reliability: "reliable"  # reliable, best_effort
+    qos_history: "keep_last"     # keep_last, keep_all
+    qos_depth: 10

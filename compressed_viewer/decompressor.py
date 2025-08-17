@@ -175,14 +175,22 @@ class Decompressor:
             end_y = min(start_y + block_size, grid_shape[1])
             end_z = min(start_z + block_size, grid_shape[2])
             
-            # Copy pattern to grid
+            # Copy pattern to grid with bounds checking
             pattern = patterns[pattern_idx]
             copy_x = end_x - start_x
             copy_y = end_y - start_y
             copy_z = end_z - start_z
             
-            voxel_grid[start_x:end_x, start_y:end_y, start_z:end_z] = \
-                pattern[:copy_x, :copy_y, :copy_z]
+            # Ensure we don't copy more than the pattern or grid allows
+            if copy_x > 0 and copy_y > 0 and copy_z > 0:
+                pattern_copy_x = min(copy_x, pattern.shape[0])
+                pattern_copy_y = min(copy_y, pattern.shape[1])
+                pattern_copy_z = min(copy_z, pattern.shape[2])
+                
+                voxel_grid[start_x:start_x+pattern_copy_x, 
+                          start_y:start_y+pattern_copy_y, 
+                          start_z:start_z+pattern_copy_z] = \
+                    pattern[:pattern_copy_x, :pattern_copy_y, :pattern_copy_z]
                 
         return voxel_grid
         
