@@ -1,0 +1,115 @@
+# Compressed Viewer Node Parameters
+
+compressed_viewer_node:
+  ros__parameters:
+    # Topic configuration
+    topics:
+      # Input topic for compressed point cloud data
+      input_topic: "compressed_pointcloud"
+      
+      # Output topic for decompressed point cloud (for other nodes)
+      pointcloud_topic: "decompressed_pointcloud"
+      
+      # Output topic for visualization markers
+      markers_topic: "visualization_markers"
+      
+      # Output topic for statistics markers
+      statistics_topic: "statistics_markers"
+    
+    # Visualization settings
+    visualization:
+      # TF frame ID for visualization
+      frame_id: "map"
+      
+      # Visualization mode: points, voxels, or both
+      visualization_mode: "points"
+      
+      # Show compression statistics overlay
+      show_statistics: true
+      
+      # Show bounding box around point cloud
+      show_bounding_box: true
+      
+      # Show voxel grid (when available)
+      show_voxel_grid: false
+      
+      # Auto-clear old visualizations
+      auto_clear: false
+      
+      # Clear interval in seconds (if auto_clear is true)
+      clear_interval: 10.0
+    
+    # Point cloud appearance
+    appearance:
+      # Point size in meters
+      point_size: 0.01
+      
+      # Point color (RGBA, values 0-1)
+      point_color_r: 0.0
+      point_color_g: 1.0
+      point_color_b: 0.0
+      point_color_a: 1.0
+      
+      # Voxel color (RGBA, values 0-1)
+      voxel_color_r: 0.0
+      voxel_color_g: 0.5
+      voxel_color_b: 1.0
+      voxel_color_a: 0.5
+      
+      # Bounding box color (RGBA, values 0-1)
+      bbox_color_r: 1.0
+      bbox_color_g: 1.0
+      bbox_color_b: 0.0
+      bbox_color_a: 0.5
+      
+      # Use rainbow coloring based on height
+      use_rainbow_coloring: false
+      
+      # Height range for rainbow coloring
+      rainbow_min_height: 0.0
+      rainbow_max_height: 2.0
+    
+    # Performance settings
+    performance:
+      # Maximum points to visualize (0 = unlimited)
+      max_points: 0
+      
+      # Downsample factor (1 = no downsampling)
+      downsample_factor: 1
+      
+      # Use LOD (Level of Detail) for large point clouds
+      use_lod: false
+      
+      # LOD distance thresholds
+      lod_distances: [10.0, 50.0, 100.0]
+      lod_factors: [1, 4, 16]
+    
+    # Statistics display
+    statistics:
+      # Position of statistics panel (x, y, z)
+      panel_position_x: 2.0
+      panel_position_y: 0.0
+      panel_position_z: 1.5
+      
+      # Text size
+      text_size: 0.08
+      
+      # Update rate (Hz)
+      update_rate: 1.0
+      
+      # Show performance graphs
+      show_graphs: true
+      
+      # Console output
+      print_to_console: true
+    
+    # Decompression settings
+    decompression:
+      # Cache decompressed data
+      cache_decompressed: false
+      
+      # Maximum cache size (MB)
+      max_cache_size_mb: 100
+      
+      # Parallel decompression threads (0 = auto)
+      num_threads: 0
