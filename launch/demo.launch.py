@@ -52,8 +52,8 @@ def generate_launch_description():
     
     voxel_size_arg = DeclareLaunchArgument(
         'voxel_size',
-        default_value='0.01',
-        description='Voxel size for compression'
+        default_value='1.0',
+        description='Voxel size for compression (in meters)'
     )
     
     block_size_arg = DeclareLaunchArgument(
@@ -66,6 +66,12 @@ def generate_launch_description():
         'target_patterns',
         default_value='256',
         description='Target number of patterns in dictionary'
+    )
+    
+    min_points_threshold_arg = DeclareLaunchArgument(
+        'min_points_threshold',
+        default_value='1',
+        description='Minimum points per voxel to mark as occupied'
     )
     
     launch_rviz_arg = DeclareLaunchArgument(
@@ -101,17 +107,11 @@ def generate_launch_description():
         elif input_file != '/tmp/sample.pcd':  # Only override if not default
             override_params['input_file'] = input_file
             
-        # Only override compression parameters if they were explicitly set
-        voxel_size = LaunchConfiguration('voxel_size').perform(context)
-        block_size = LaunchConfiguration('block_size').perform(context)
-        target_patterns = LaunchConfiguration('target_patterns').perform(context)
-        
-        if voxel_size != '0.01':  # Default value
-            override_params['voxel_size'] = LaunchConfiguration('voxel_size')
-        if block_size != '4':  # Default value
-            override_params['block_size'] = LaunchConfiguration('block_size')
-        if target_patterns != '256':  # Default value
-            override_params['target_patterns'] = LaunchConfiguration('target_patterns')
+        # Always pass through launch arguments to override YAML settings
+        override_params['voxel_size'] = LaunchConfiguration('voxel_size')
+        override_params['block_size'] = LaunchConfiguration('block_size')
+        override_params['target_patterns'] = LaunchConfiguration('target_patterns')
+        override_params['min_points_threshold'] = LaunchConfiguration('min_points_threshold')
             
         # Always set these publishing parameters
         override_params.update({
@@ -191,6 +191,7 @@ def generate_launch_description():
     ld.add_action(voxel_size_arg)
     ld.add_action(block_size_arg)
     ld.add_action(target_patterns_arg)
+    ld.add_action(min_points_threshold_arg)
     ld.add_action(launch_rviz_arg)
     ld.add_action(use_sim_time_arg)
     ld.add_action(config_file_arg)

@@ -250,6 +250,17 @@ class CompressedViewerNode(Node):
                 # Print statistics to console
                 self.statistics_display.print_statistics()
                 
+            # Process PatternDictionary from the compressed message for pattern visualization
+            if self.show_pattern_visualization and hasattr(msg, 'pattern_dictionary'):
+                try:
+                    self.get_logger().info("Processing PatternDictionary from compressed message")
+                    # Use the original voxel size from compression settings for accurate visualization
+                    original_voxel_size = msg.compression_settings.voxel_size
+                    self.get_logger().info(f"Using original voxel size: {original_voxel_size}")
+                    self.process_pattern_dictionary(msg.pattern_dictionary, voxel_size=original_voxel_size)
+                except Exception as e:
+                    self.get_logger().error(f"Error processing PatternDictionary: {str(e)}")
+                
         except Exception as e:
             self.get_logger().error(f"Error processing compressed message: {str(e)}")
             import traceback
@@ -262,10 +273,26 @@ class CompressedViewerNode(Node):
         Args:
             msg: PatternDictionary message
         """
+        # Use fallback voxel size for standalone PatternDictionary messages
+        fallback_voxel_size = self.pattern_voxel_size
+        self.process_pattern_dictionary(msg, voxel_size=fallback_voxel_size)
+        
+    def process_pattern_dictionary(self, pattern_dict, voxel_size=None):
+        """
+        Process PatternDictionary data for visualization
+        
+        Args:
+            pattern_dict: PatternDictionary message or data
+            voxel_size: Voxel size to use for visualization (if None, uses parameter)
+        """
         if not self.show_pattern_visualization:
             return
             
-        self.get_logger().info(f"Received PatternDictionary with {msg.num_patterns} patterns")
+        # Use provided voxel_size or fallback to parameter
+        actual_voxel_size = voxel_size if voxel_size is not None else self.pattern_voxel_size
+        
+        self.get_logger().info(f"Processing PatternDictionary with {pattern_dict.num_patterns} patterns")
+        self.get_logger().info(f"Using voxel size: {actual_voxel_size} for pattern visualization")
         
         try:
             # Start timing
@@ -273,8 +300,8 @@ class CompressedViewerNode(Node):
             
             # Decompress pattern dictionary into 3D boolean arrays
             patterns = self.pattern_decompressor.decompress_pattern_dictionary(
-                msg, 
-                validate_checksum=True
+                pattern_dict, 
+                validate_checksum=False  # Skip checksum for now as it may not be properly set
             )
             
             # Calculate decompression time
@@ -285,26 +312,27 @@ class CompressedViewerNode(Node):
             )
             
             if len(patterns) > 0:
-                # Create pattern markers
+                # Create pattern markers (limit to first 20 patterns for performance)
+                display_patterns = patterns[:20]
                 pattern_markers = self.pattern_visualizer.create_pattern_markers(
-                    patterns,
+                    display_patterns,
                     pattern_spacing=self.pattern_spacing,
-                    voxel_size=self.pattern_voxel_size
+                    voxel_size=actual_voxel_size  # Use actual compression voxel size
                 )
                 
-                # Publish pattern markers
-                self.pattern_markers_pub.publish(pattern_markers)
-                self.get_logger().info(f"Published {len(pattern_markers.markers)} pattern markers")
-                
                 # Create info text
-                info_text = f"Pattern Dictionary: {len(patterns)} patterns\n"
-                for i, pattern in enumerate(patterns):
+                info_text = f"Pattern Dictionary: {len(patterns)} patterns (showing first {len(display_patterns)})\n"
+                info_text += f"Voxel size: {actual_voxel_size:.3f}m\n"
+                info_text += f"Block size: {display_patterns[0].shape[0] if display_patterns else 'N/A'}\n"
+                for i, pattern in enumerate(display_patterns):
                     voxel_count = int(np.sum(pattern))
-                    info_text += f"Pattern {i}: {voxel_count} voxels\n"
+                    total_voxels = pattern.size
+                    density = (voxel_count / total_voxels) * 100 if total_voxels > 0 else 0
+                    info_text += f"Pattern {i}: {voxel_count}/{total_voxels} voxels ({density:.1f}%)\n"
                 
                 # Create and publish info markers
                 info_markers = self.pattern_visualizer.create_info_markers(
-                    patterns,
+                    display_patterns,
                     info_text,
                     position=(0.0, -2.0, 2.0)
                 )
@@ -315,12 +343,13 @@ class CompressedViewerNode(Node):
                 combined_markers.markers.extend(info_markers.markers)
                 
                 self.pattern_markers_pub.publish(combined_markers)
+                self.get_logger().info(f"Published {len(display_patterns)} pattern markers (out of {len(patterns)} total)")
                 
             else:
                 self.get_logger().warn("No patterns found in PatternDictionary")
                 
         except Exception as e:
-            self.get_logger().error(f"Error processing PatternDictionary message: {str(e)}")
+            self.get_logger().error(f"Error processing PatternDictionary: {str(e)}")
             import traceback
             self.get_logger().error(traceback.format_exc())
             

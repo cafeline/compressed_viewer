@@ -74,7 +74,8 @@ ros2 launch compressed_viewer demo.launch.py launch_rviz:=false
 
 ### 可視化設定
 - `pattern_spacing`: パターン間隔（デフォルト: 2.5m）
-- `pattern_voxel_size`: パターン表示時のボクセルサイズ（デフォルト: 0.08）
+- `pattern_voxel_size`: フォールバック用ボクセルサイズ（デフォルト: 0.08）
+  - **注意**: 通常は圧縮時の元のvoxel_sizeが自動的に使用されます
 - `show_pattern_visualization`: パターン可視化ON/OFF（デフォルト: true）
 
 ### 表示色設定
@@ -117,8 +118,13 @@ DATA ascii
 ## 実行の流れ
 
 1. `pointcloud_compressor_node` がPCDファイルを読み込み、圧縮
-2. 圧縮されたデータ（CompressedPointCloud）とパターン辞書（PatternDictionary）をパブリッシュ
+2. 圧縮されたデータ（CompressedPointCloud）をパブリッシュ
 3. `compressed_viewer_node` がこれらを受信し、復元・可視化
+   - **元の点群復元**: 圧縮前のボクセル構造を正確に再現
+   - **パターン可視化**: 圧縮時と同じvoxel_sizeでパターンを表示
 4. RViz2でリアルタイムに表示
 
-パターン辞書は各ユニークなボクセルパターンを色分けして表示され、圧縮効率を視覚的に確認できます。
+### 可視化の特徴
+- **正確な復元**: 圧縮時のvoxel_size（例: 1.0m）で元の構造を再現
+- **パターン辞書表示**: ユニークなボクセルパターンを色分けして表示
+- **圧縮効率確認**: パターン再利用率を視覚的に確認可能
