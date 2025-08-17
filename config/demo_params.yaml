@@ -12,7 +12,7 @@ pointcloud_compressor_node:
     block_size: 8
     target_patterns: 128
     use_8bit_indices: true
-    min_points_threshold: 1
+    min_points_threshold: 10000
 
     # Publishing settings
     publish_once: true

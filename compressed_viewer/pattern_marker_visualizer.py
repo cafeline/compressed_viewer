@@ -4,7 +4,7 @@ PatternMarkerVisualizer module for creating MarkerArray visualizations from patt
 """
 
 import numpy as np
-from typing import List, Tuple, Optional
+from typing import List, Tuple, Optional, Dict
 from visualization_msgs.msg import MarkerArray, Marker
 from geometry_msgs.msg import Point, Vector3
 from std_msgs.msg import ColorRGBA, Header
@@ -102,6 +102,120 @@ class PatternMarkerVisualizer:
                 marker.points.append(point)
                 
             marker_array.markers.append(marker)
+            
+        return marker_array
+        
+    def create_spatial_pattern_markers(self,
+                                      patterns: List[np.ndarray],
+                                      block_indices: List[int],
+                                      blocks_dims: Tuple[int, int, int],
+                                      voxel_size: float,
+                                      block_size: int,
+                                      grid_origin: Tuple[float, float, float] = (0.0, 0.0, 0.0),
+                                      colors: Optional[List[Tuple[float, float, float, float]]] = None) -> MarkerArray:
+        """
+        Create MarkerArray with patterns positioned at their actual 3D locations
+        
+        Args:
+            patterns: List of 3D boolean arrays representing patterns
+            block_indices: List mapping block positions to pattern indices
+            blocks_dims: Number of blocks in each dimension (x, y, z)
+            voxel_size: Size of each voxel in meters
+            block_size: Size of each block in voxels (e.g., 8 for 8x8x8)
+            grid_origin: Origin of the voxel grid in world coordinates
+            colors: Optional list of (r, g, b, a) tuples for pattern colors
+            
+        Returns:
+            MarkerArray message containing spatially positioned visualization markers
+        """
+        marker_array = MarkerArray()
+        
+        if not patterns or not block_indices:
+            print(f"WARNING: create_spatial_pattern_markers - patterns: {len(patterns) if patterns else 0}, block_indices: {len(block_indices) if block_indices else 0}")
+            return marker_array
+            
+        blocks_x, blocks_y, blocks_z = blocks_dims
+        block_size_meters = block_size * voxel_size
+        
+        # Create a marker for each block
+        marker_id = 0
+        skipped_blocks = 0
+        for block_idx, pattern_idx in enumerate(block_indices):
+            if pattern_idx >= len(patterns):
+                skipped_blocks += 1
+                continue
+                
+            pattern = patterns[pattern_idx]
+            if not self._validate_pattern(pattern):
+                continue
+                
+            # Calculate block position in 3D grid
+            bz = block_idx // (blocks_x * blocks_y)
+            by = (block_idx % (blocks_x * blocks_y)) // blocks_x
+            bx = block_idx % blocks_x
+            
+            # Calculate world position for this block
+            block_world_pos = (
+                grid_origin[0] + bx * block_size_meters,
+                grid_origin[1] + by * block_size_meters,
+                grid_origin[2] + bz * block_size_meters
+            )
+            
+            # Get voxel positions for this pattern (relative to block origin)
+            voxel_positions = self._create_voxel_positions(pattern, voxel_size, (0.0, 0.0, 0.0))
+            
+            if not voxel_positions:
+                continue
+                
+            # Create marker for this block
+            marker = Marker()
+            marker.header = Header()
+            marker.header.frame_id = self.frame_id
+            marker.id = marker_id
+            marker.type = Marker.CUBE_LIST
+            marker.action = Marker.ADD
+            
+            # Set marker pose at block's world position
+            marker.pose.position.x = block_world_pos[0]
+            marker.pose.position.y = block_world_pos[1]
+            marker.pose.position.z = block_world_pos[2]
+            marker.pose.orientation.w = 1.0
+            
+            # Set marker scale (voxel size)
+            marker.scale = Vector3()
+            marker.scale.x = voxel_size
+            marker.scale.y = voxel_size
+            marker.scale.z = voxel_size
+            
+            # Set marker color based on pattern index for consistency
+            if colors and pattern_idx < len(colors):
+                marker.color = ColorRGBA()
+                marker.color.r = colors[pattern_idx][0]
+                marker.color.g = colors[pattern_idx][1]
+                marker.color.b = colors[pattern_idx][2]
+                marker.color.a = colors[pattern_idx][3]
+            else:
+                default_color = self._get_default_color(pattern_idx)
+                marker.color = ColorRGBA()
+                marker.color.r = default_color[0]
+                marker.color.g = default_color[1]
+                marker.color.b = default_color[2]
+                marker.color.a = default_color[3]
+            
+            # Add voxel positions as points
+            marker.points = []
+            for pos in voxel_positions:
+                point = Point()
+                point.x = pos[0]
+                point.y = pos[1]
+                point.z = pos[2]
+                marker.points.append(point)
+                
+            marker_array.markers.append(marker)
+            marker_id += 1
+        
+        if skipped_blocks > 0:
+            print(f"WARNING: Skipped {skipped_blocks} blocks due to invalid pattern indices")
             
         return marker_array
         

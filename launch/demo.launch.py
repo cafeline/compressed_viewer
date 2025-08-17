@@ -52,26 +52,26 @@ def generate_launch_description():
     
     voxel_size_arg = DeclareLaunchArgument(
         'voxel_size',
-        default_value='1.0',
-        description='Voxel size for compression (in meters)'
+        default_value='',  # Empty string means use YAML value
+        description='Voxel size for compression (in meters) - leave empty to use YAML config'
     )
     
     block_size_arg = DeclareLaunchArgument(
         'block_size',
-        default_value='4',
-        description='Block size for compression'
+        default_value='',  # Empty string means use YAML value
+        description='Block size for compression - leave empty to use YAML config'
     )
     
     target_patterns_arg = DeclareLaunchArgument(
         'target_patterns',
-        default_value='256',
-        description='Target number of patterns in dictionary'
+        default_value='',  # Empty string means use YAML value
+        description='Target number of patterns in dictionary - leave empty to use YAML config'
     )
     
     min_points_threshold_arg = DeclareLaunchArgument(
         'min_points_threshold',
-        default_value='1',
-        description='Minimum points per voxel to mark as occupied'
+        default_value='',  # Empty string means use YAML value
+        description='Minimum points per voxel to mark as occupied - leave empty to use YAML config'
     )
     
     launch_rviz_arg = DeclareLaunchArgument(
@@ -97,21 +97,29 @@ def generate_launch_description():
         # Determine input file (pcd_file takes precedence for backward compatibility)
         pcd_file = LaunchConfiguration('pcd_file').perform(context)
         input_file = LaunchConfiguration('input_file').perform(context)
+        voxel_size = LaunchConfiguration('voxel_size').perform(context)
+        block_size = LaunchConfiguration('block_size').perform(context)
+        target_patterns = LaunchConfiguration('target_patterns').perform(context)
+        min_points_threshold = LaunchConfiguration('min_points_threshold').perform(context)
         
-        # Only override input_file if explicitly provided via command line
+        # Build override parameters dict
         override_params = {'use_sim_time': LaunchConfiguration('use_sim_time')}
         
-        # Check if input_file was changed from default
+        # Only override if values were explicitly set (not default)
         if pcd_file:
             override_params['input_file'] = pcd_file
-        elif input_file != '/tmp/sample.pcd':  # Only override if not default
+        elif input_file != '/tmp/sample.pcd':
             override_params['input_file'] = input_file
             
-        # Always pass through launch arguments to override YAML settings
-        override_params['voxel_size'] = LaunchConfiguration('voxel_size')
-        override_params['block_size'] = LaunchConfiguration('block_size')
-        override_params['target_patterns'] = LaunchConfiguration('target_patterns')
-        override_params['min_points_threshold'] = LaunchConfiguration('min_points_threshold')
+        # Only override if values were explicitly provided (not empty)
+        if voxel_size and voxel_size != '':
+            override_params['voxel_size'] = float(voxel_size)
+        if block_size and block_size != '':
+            override_params['block_size'] = int(block_size)
+        if target_patterns and target_patterns != '':
+            override_params['target_patterns'] = int(target_patterns)
+        if min_points_threshold and min_points_threshold != '':
+            override_params['min_points_threshold'] = int(min_points_threshold)
             
         # Always set these publishing parameters
         override_params.update({
