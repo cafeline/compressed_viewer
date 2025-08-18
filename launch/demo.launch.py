@@ -80,6 +80,12 @@ def generate_launch_description():
         description='Launch RViz for visualization'
     )
     
+    publish_occupied_voxel_markers_arg = DeclareLaunchArgument(
+        'publish_occupied_voxel_markers',
+        default_value='',  # Empty means use YAML value
+        description='Publish occupied voxel markers - leave empty to use YAML config'
+    )
+    
     use_sim_time_arg = DeclareLaunchArgument(
         'use_sim_time',
         default_value='false',
@@ -101,6 +107,7 @@ def generate_launch_description():
         block_size = LaunchConfiguration('block_size').perform(context)
         target_patterns = LaunchConfiguration('target_patterns').perform(context)
         min_points_threshold = LaunchConfiguration('min_points_threshold').perform(context)
+        publish_occupied_voxel_markers = LaunchConfiguration('publish_occupied_voxel_markers').perform(context)
         
         # Build override parameters dict
         override_params = {'use_sim_time': LaunchConfiguration('use_sim_time')}
@@ -120,6 +127,8 @@ def generate_launch_description():
             override_params['target_patterns'] = int(target_patterns)
         if min_points_threshold and min_points_threshold != '':
             override_params['min_points_threshold'] = int(min_points_threshold)
+        if publish_occupied_voxel_markers and publish_occupied_voxel_markers != '':
+            override_params['publish_occupied_voxel_markers'] = publish_occupied_voxel_markers.lower() == 'true'
             
         # Always set these publishing parameters
         override_params.update({
@@ -201,6 +210,7 @@ def generate_launch_description():
     ld.add_action(target_patterns_arg)
     ld.add_action(min_points_threshold_arg)
     ld.add_action(launch_rviz_arg)
+    ld.add_action(publish_occupied_voxel_markers_arg)
     ld.add_action(use_sim_time_arg)
     ld.add_action(config_file_arg)
     

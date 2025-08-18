@@ -350,7 +350,13 @@ class CompressedViewerNode(Node):
             if len(patterns) > 0:
                 # Check if we have spatial information from CompressedPointCloud
                 use_spatial = False
-                if compressed_msg and hasattr(compressed_msg, 'block_indices') and len(compressed_msg.block_indices) > 0:
+                
+                # Check if there are any blocks to visualize (important for min_points_threshold filtering)
+                if compressed_msg and hasattr(compressed_msg, 'block_indices'):
+                    if len(compressed_msg.block_indices) == 0:
+                        self.get_logger().info("No blocks to visualize (all filtered by min_points_threshold)")
+                        return  # Exit early - no markers to show
+                    
                     # Check if block dimensions are valid
                     if compressed_msg.blocks_x > 0 and compressed_msg.blocks_y > 0 and compressed_msg.blocks_z > 0:
                         use_spatial = True
@@ -396,7 +402,14 @@ class CompressedViewerNode(Node):
                     
                 if not use_spatial:
                     # Fallback to linear pattern display (for standalone PatternDictionary messages)
-                    self.get_logger().info("Using linear pattern visualization")
+                    # Only show if we don't have compressed_msg (standalone) or if we have valid blocks
+                    if compressed_msg is None:
+                        # Standalone PatternDictionary message - show linear display
+                        self.get_logger().info("Using linear pattern visualization (standalone PatternDictionary)")
+                    else:
+                        # We have compressed_msg but no valid spatial info - likely all filtered
+                        self.get_logger().info("No valid blocks to display (possibly filtered by min_points_threshold)")
+                        return  # Exit - don't show markers
                     
                     # Create pattern markers (limit to first 20 patterns for performance)
                     display_patterns = patterns[:20]

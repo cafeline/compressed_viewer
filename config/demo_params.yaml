@@ -12,7 +12,7 @@ pointcloud_compressor_node:
     block_size: 8
     target_patterns: 128
     use_8bit_indices: true
-    min_points_threshold: 10000
+    min_points_threshold: 100
 
     # Publishing settings
     publish_once: true
@@ -22,11 +22,14 @@ pointcloud_compressor_node:
 
     # Performance settings
     optimization_iterations: 5
-    max_compression_time: 30.0
+    max_compression_time: 100000.0
 
     # Logging
     verbose_output: true
     print_statistics: true
+
+    # Occupied voxel markers
+    publish_occupied_voxel_markers: true
 
 compressed_viewer_node:
   ros__parameters:
