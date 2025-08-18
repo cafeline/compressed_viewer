@@ -71,11 +71,11 @@ class PatternMarkerVisualizer:
             marker.pose.position.z = pattern_offset[2]
             marker.pose.orientation.w = 1.0
             
-            # Set marker scale (voxel size)
+            # Set marker scale (slightly smaller than voxel size for visibility, matching occupied_voxel_markers)
             marker.scale = Vector3()
-            marker.scale.x = voxel_size
-            marker.scale.y = voxel_size
-            marker.scale.z = voxel_size
+            marker.scale.x = voxel_size * 0.9
+            marker.scale.y = voxel_size * 0.9
+            marker.scale.z = voxel_size * 0.9
             
             # Set marker color
             if colors and i < len(colors):
@@ -140,9 +140,15 @@ class PatternMarkerVisualizer:
         # Create a marker for each block
         marker_id = 0
         skipped_blocks = 0
+        empty_patterns = 0
+        total_voxels = 0
+        
+        print(f"DEBUG: Creating spatial markers for {len(block_indices)} blocks with {len(patterns)} patterns")
+        
         for block_idx, pattern_idx in enumerate(block_indices):
             if pattern_idx >= len(patterns):
                 skipped_blocks += 1
+                print(f"DEBUG: Block {block_idx} skipped - pattern_idx {pattern_idx} >= {len(patterns)}")
                 continue
                 
             pattern = patterns[pattern_idx]
@@ -165,7 +171,11 @@ class PatternMarkerVisualizer:
             voxel_positions = self._create_voxel_positions(pattern, voxel_size, (0.0, 0.0, 0.0))
             
             if not voxel_positions:
+                empty_patterns += 1
+                print(f"DEBUG: Block {block_idx} has empty pattern (pattern_idx={pattern_idx})")
                 continue
+                
+            total_voxels += len(voxel_positions)
                 
             # Create marker for this block
             marker = Marker()
@@ -181,11 +191,11 @@ class PatternMarkerVisualizer:
             marker.pose.position.z = block_world_pos[2]
             marker.pose.orientation.w = 1.0
             
-            # Set marker scale (voxel size)
+            # Set marker scale (slightly smaller than voxel size for visibility, matching occupied_voxel_markers)
             marker.scale = Vector3()
-            marker.scale.x = voxel_size
-            marker.scale.y = voxel_size
-            marker.scale.z = voxel_size
+            marker.scale.x = voxel_size * 0.9
+            marker.scale.y = voxel_size * 0.9
+            marker.scale.z = voxel_size * 0.9
             
             # Set marker color based on pattern index for consistency
             if colors and pattern_idx < len(colors):
@@ -213,6 +223,9 @@ class PatternMarkerVisualizer:
                 
             marker_array.markers.append(marker)
             marker_id += 1
+        
+        print(f"DEBUG: Created {marker_id} markers with {total_voxels} total voxels")
+        print(f"DEBUG: Skipped {skipped_blocks} blocks (invalid indices), {empty_patterns} blocks (empty patterns)")
         
         if skipped_blocks > 0:
             print(f"WARNING: Skipped {skipped_blocks} blocks due to invalid pattern indices")

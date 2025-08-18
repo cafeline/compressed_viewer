@@ -5,10 +5,11 @@ pointcloud_compressor_single_shot:
   ros__parameters:
     # Input/Output settings
     input_pcd_file: "/home/ryo/tsudanuma/maps/tsudanuma-challenge-all.ply"
+    # input_pcd_file: "/home/ryo/image_compressor_ws/src/tmp/bunny/data/bun000.ply"
     output_prefix: "/tmp/compressed_demo"
 
     # Compression settings
-    voxel_size: 1.0
+    voxel_size: 5.01
     block_size: 8
     target_patterns: 128
     use_8bit_indices: true

@@ -316,8 +316,11 @@ class CompressedViewerNode(Node):
         if not self.show_pattern_visualization:
             return
             
-        # Use provided voxel_size or fallback to parameter
-        actual_voxel_size = voxel_size if voxel_size is not None else self.pattern_voxel_size
+        # Use voxel_size from PatternDictionary if available, otherwise use provided or fallback
+        if hasattr(pattern_dict, 'voxel_size') and pattern_dict.voxel_size > 0:
+            actual_voxel_size = pattern_dict.voxel_size
+        else:
+            actual_voxel_size = voxel_size if voxel_size is not None else self.pattern_voxel_size
         
         self.get_logger().info(f"Processing PatternDictionary with {pattern_dict.num_patterns} patterns")
         self.get_logger().info(f"Using voxel size: {actual_voxel_size} for pattern visualization")
@@ -350,10 +353,10 @@ class CompressedViewerNode(Node):
             )
             
             if len(patterns) > 0:
-                # Check if we have spatial information from CompressedPointCloud
+                # Check if we have spatial information from CompressedPointCloud or PatternDictionary
                 use_spatial = False
                 
-                # Check if there are any blocks to visualize (important for min_points_threshold filtering)
+                # First, check if we have spatial info from CompressedPointCloud
                 if compressed_msg and hasattr(compressed_msg, 'block_indices'):
                     if len(compressed_msg.block_indices) == 0:
                         self.get_logger().info("No blocks to visualize (all filtered by min_points_threshold)")
@@ -367,20 +370,41 @@ class CompressedViewerNode(Node):
                     else:
                         self.get_logger().warn(f"Invalid block dimensions: {compressed_msg.blocks_x}x{compressed_msg.blocks_y}x{compressed_msg.blocks_z}")
                 
+                # If no compressed_msg, check if PatternDictionary has spatial info
+                elif pattern_dict and hasattr(pattern_dict, 'blocks_x'):
+                    # Check if PatternDictionary has valid spatial information
+                    if (pattern_dict.blocks_x > 0 and pattern_dict.blocks_y > 0 and pattern_dict.blocks_z > 0 and
+                        len(pattern_dict.block_indices) > 0):
+                        use_spatial = True
+                        self.get_logger().info("Using spatial pattern visualization from PatternDictionary")
+                        self.get_logger().info(f"Block indices count: {len(pattern_dict.block_indices)}")
+                
                 if use_spatial:
-                    # Get block dimensions and origin
-                    blocks_dims = (compressed_msg.blocks_x, compressed_msg.blocks_y, compressed_msg.blocks_z)
-                    grid_origin = (
-                        compressed_msg.voxel_grid_origin.x,
-                        compressed_msg.voxel_grid_origin.y,
-                        compressed_msg.voxel_grid_origin.z
-                    )
-                    block_size = compressed_msg.compression_settings.block_size
+                    # Get block dimensions and origin from either compressed_msg or pattern_msg
+                    if compressed_msg:
+                        blocks_dims = (compressed_msg.blocks_x, compressed_msg.blocks_y, compressed_msg.blocks_z)
+                        grid_origin = (
+                            compressed_msg.voxel_grid_origin.x,
+                            compressed_msg.voxel_grid_origin.y,
+                            compressed_msg.voxel_grid_origin.z
+                        )
+                        block_size = compressed_msg.compression_settings.block_size
+                        block_indices = compressed_msg.block_indices
+                    else:
+                        # Use PatternDictionary spatial info
+                        blocks_dims = (pattern_dict.blocks_x, pattern_dict.blocks_y, pattern_dict.blocks_z)
+                        grid_origin = (
+                            pattern_dict.voxel_grid_origin.x,
+                            pattern_dict.voxel_grid_origin.y,
+                            pattern_dict.voxel_grid_origin.z
+                        )
+                        block_size = pattern_dict.block_size
+                        block_indices = pattern_dict.block_indices
                     
                     # Create spatial pattern markers
                     pattern_markers = self.pattern_visualizer.create_spatial_pattern_markers(
                         patterns,
-                        compressed_msg.block_indices,
+                        block_indices,
                         blocks_dims,
                         actual_voxel_size,
                         block_size,
@@ -391,7 +415,7 @@ class CompressedViewerNode(Node):
                     
                     # Create info text
                     info_text = f"Spatial Pattern Visualization\n"
-                    info_text += f"Total blocks: {len(compressed_msg.block_indices)}\n"
+                    info_text += f"Total blocks: {len(block_indices)}\n"
                     info_text += f"Block dimensions: {blocks_dims[0]}x{blocks_dims[1]}x{blocks_dims[2]}\n"
                     info_text += f"Unique patterns: {len(patterns)}\n"
                     info_text += f"Voxel size: {actual_voxel_size:.3f}m\n"
@@ -469,7 +493,7 @@ class CompressedViewerNode(Node):
                     print("="*50)
                     
                     if use_spatial:
-                        self.get_logger().info(f"Published {len(pattern_markers.markers)} spatial pattern markers for {len(compressed_msg.block_indices)} blocks")
+                        self.get_logger().info(f"Published {len(pattern_markers.markers)} spatial pattern markers for {len(block_indices)} blocks")
                     else:
                         self.get_logger().info(f"Published {len(pattern_markers.markers)} linear pattern markers")
                 else:
