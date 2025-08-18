@@ -1,10 +1,10 @@
 # Demo configuration for compressed viewer with pattern visualization
 # This configuration is optimized for demonstration purposes
 
-pointcloud_compressor_node:
+pointcloud_compressor_single_shot:
   ros__parameters:
     # Input/Output settings
-    input_file: "/home/ryo/tsudanuma/maps/tsudanuma-challenge-all.ply"
+    input_pcd_file: "/home/ryo/tsudanuma/maps/tsudanuma-challenge-all.ply"
     output_prefix: "/tmp/compressed_demo"
 
     # Compression settings
@@ -31,7 +31,27 @@ pointcloud_compressor_node:
     # Occupied voxel markers
     publish_occupied_voxel_markers: true
 
-compressed_viewer_node:
+pointcloud_compressor_continuous:
+  ros__parameters:
+    # Input/Output settings
+    input_pcd_file: "/home/ryo/tsudanuma/maps/tsudanuma-challenge-all.ply"
+    output_prefix: "/tmp/compressed_demo"
+
+    # Compression settings
+    voxel_size: 1.0
+    block_size: 8
+    target_patterns: 128
+    use_8bit_indices: true
+    min_points_threshold: 100
+
+    # Publishing settings
+    publish_once: false
+    publish_interval_ms: 3000
+    publish_patterns: true
+    output_topic: "compressed_pointcloud"
+    pattern_topic: "pattern_dictionary"
+
+compressed_viewer_single_shot:
   ros__parameters:
     # Input topics
     input_topic: "compressed_pointcloud"
@@ -89,3 +109,18 @@ compressed_viewer_node:
     qos_reliability: "reliable"  # reliable, best_effort
     qos_history: "keep_last"     # keep_last, keep_all
     qos_depth: 10
+
+compressed_viewer_continuous:
+  ros__parameters:
+    # Same as compressed_viewer_single_shot
+    input_topic: "compressed_pointcloud"
+    pattern_dictionary_topic: "pattern_dictionary"
+    pointcloud_topic: "decompressed_pointcloud"
+    markers_topic: "visualization_markers"
+    pattern_markers_topic: "pattern_markers"
+    statistics_topic: "statistics_markers"
+    frame_id: "map"
+    visualization_mode: "both"
+    show_statistics: true
+    show_bounding_box: true
+    show_pattern_visualization: true

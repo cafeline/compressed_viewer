@@ -19,7 +19,9 @@ from std_msgs.msg import Header
 # Import compressed point cloud messages from pointcloud_compressor package
 # These need to be built first with colcon build
 try:
-    from pointcloud_compressor.msg import CompressedPointCloud, PatternDictionary
+    from pointcloud_compressor.msg import PatternDictionary
+    # CompressedPointCloud message doesn't exist yet, set to None
+    CompressedPointCloud = None
 except ImportError:
     # Fallback for development/testing
     print("Warning: pointcloud_compressor messages not found. Using mock message.")
