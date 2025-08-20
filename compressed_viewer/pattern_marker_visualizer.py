@@ -43,7 +43,8 @@ class PatternMarkerVisualizer:
         
         if not patterns:
             return marker_array
-            
+        
+        marker_id = 0
         for i, pattern in enumerate(patterns):
             if not self._validate_pattern(pattern):
                 continue
@@ -57,51 +58,36 @@ class PatternMarkerVisualizer:
             if not voxel_positions:
                 continue
                 
-            # Create marker for this pattern
-            marker = Marker()
-            marker.header = Header()
-            marker.header.frame_id = self.frame_id
-            marker.id = i
-            marker.type = Marker.CUBE_LIST
-            marker.action = Marker.ADD
-            
-            # Set marker pose (position offset)
-            marker.pose.position.x = pattern_offset[0]
-            marker.pose.position.y = pattern_offset[1]
-            marker.pose.position.z = pattern_offset[2]
-            marker.pose.orientation.w = 1.0
-            
-            # Set marker scale (slightly smaller than voxel size for visibility, matching occupied_voxel_markers)
-            marker.scale = Vector3()
-            marker.scale.x = voxel_size * 0.9
-            marker.scale.y = voxel_size * 0.9
-            marker.scale.z = voxel_size * 0.9
-            
-            # Set marker color
-            if colors and i < len(colors):
-                marker.color = ColorRGBA()
-                marker.color.r = colors[i][0]
-                marker.color.g = colors[i][1]
-                marker.color.b = colors[i][2]
-                marker.color.a = colors[i][3]
-            else:
-                default_color = self._get_default_color(i)
-                marker.color = ColorRGBA()
-                marker.color.r = default_color[0]
-                marker.color.g = default_color[1]
-                marker.color.b = default_color[2]
-                marker.color.a = default_color[3]
-            
-            # Add voxel positions as points
-            marker.points = []
-            for pos in voxel_positions:
-                point = Point()
-                point.x = pos[0]
-                point.y = pos[1]
-                point.z = pos[2]
-                marker.points.append(point)
+            # Create individual CUBE markers for each voxel (matching occupied_voxel_markers format)
+            for voxel_pos in voxel_positions:
+                marker = Marker()
+                marker.header = Header()
+                marker.header.frame_id = self.frame_id
+                marker.id = marker_id
+                marker.type = Marker.CUBE  # Individual CUBE instead of CUBE_LIST
+                marker.action = Marker.ADD
                 
-            marker_array.markers.append(marker)
+                # Set marker position (pattern offset + voxel position)
+                marker.pose.position.x = pattern_offset[0] + voxel_pos[0]
+                marker.pose.position.y = pattern_offset[1] + voxel_pos[1]
+                marker.pose.position.z = pattern_offset[2] + voxel_pos[2]
+                marker.pose.orientation.w = 1.0
+                
+                # Set marker scale (slightly smaller than voxel size for visibility, matching occupied_voxel_markers)
+                marker.scale = Vector3()
+                marker.scale.x = voxel_size * 0.9
+                marker.scale.y = voxel_size * 0.9
+                marker.scale.z = voxel_size * 0.9
+                
+                # Set marker color to blue (all markers same color)
+                marker.color = ColorRGBA()
+                marker.color.r = 0.0
+                marker.color.g = 0.0
+                marker.color.b = 1.0
+                marker.color.a = 0.5  # Semi-transparent
+                
+                marker_array.markers.append(marker)
+                marker_id += 1
             
         return marker_array
         
@@ -176,53 +162,37 @@ class PatternMarkerVisualizer:
                 continue
                 
             total_voxels += len(voxel_positions)
+            
+            # Create individual CUBE markers for each voxel (matching occupied_voxel_markers format)
+            for voxel_pos in voxel_positions:
+                marker = Marker()
+                marker.header = Header()
+                marker.header.frame_id = self.frame_id
+                marker.id = marker_id
+                marker.type = Marker.CUBE  # Individual CUBE instead of CUBE_LIST
+                marker.action = Marker.ADD
                 
-            # Create marker for this block
-            marker = Marker()
-            marker.header = Header()
-            marker.header.frame_id = self.frame_id
-            marker.id = marker_id
-            marker.type = Marker.CUBE_LIST
-            marker.action = Marker.ADD
-            
-            # Set marker pose at block's world position
-            marker.pose.position.x = block_world_pos[0]
-            marker.pose.position.y = block_world_pos[1]
-            marker.pose.position.z = block_world_pos[2]
-            marker.pose.orientation.w = 1.0
-            
-            # Set marker scale (slightly smaller than voxel size for visibility, matching occupied_voxel_markers)
-            marker.scale = Vector3()
-            marker.scale.x = voxel_size * 0.9
-            marker.scale.y = voxel_size * 0.9
-            marker.scale.z = voxel_size * 0.9
-            
-            # Set marker color based on pattern index for consistency
-            if colors and pattern_idx < len(colors):
-                marker.color = ColorRGBA()
-                marker.color.r = colors[pattern_idx][0]
-                marker.color.g = colors[pattern_idx][1]
-                marker.color.b = colors[pattern_idx][2]
-                marker.color.a = colors[pattern_idx][3]
-            else:
-                default_color = self._get_default_color(pattern_idx)
-                marker.color = ColorRGBA()
-                marker.color.r = default_color[0]
-                marker.color.g = default_color[1]
-                marker.color.b = default_color[2]
-                marker.color.a = default_color[3]
-            
-            # Add voxel positions as points
-            marker.points = []
-            for pos in voxel_positions:
-                point = Point()
-                point.x = pos[0]
-                point.y = pos[1]
-                point.z = pos[2]
-                marker.points.append(point)
+                # Set marker position (block position + voxel position)
+                marker.pose.position.x = block_world_pos[0] + voxel_pos[0]
+                marker.pose.position.y = block_world_pos[1] + voxel_pos[1]
+                marker.pose.position.z = block_world_pos[2] + voxel_pos[2]
+                marker.pose.orientation.w = 1.0
                 
-            marker_array.markers.append(marker)
-            marker_id += 1
+                # Set marker scale (slightly smaller than voxel size for visibility, matching occupied_voxel_markers)
+                marker.scale = Vector3()
+                marker.scale.x = voxel_size * 0.9
+                marker.scale.y = voxel_size * 0.9
+                marker.scale.z = voxel_size * 0.9
+                
+                # Set marker color to blue (all markers same color)
+                marker.color = ColorRGBA()
+                marker.color.r = 0.0
+                marker.color.g = 0.0
+                marker.color.b = 1.0
+                marker.color.a = 0.5  # Semi-transparent
+                
+                marker_array.markers.append(marker)
+                marker_id += 1
         
         print(f"DEBUG: Created {marker_id} markers with {total_voxels} total voxels")
         print(f"DEBUG: Skipped {skipped_blocks} blocks (invalid indices), {empty_patterns} blocks (empty patterns)")

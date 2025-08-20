@@ -462,12 +462,13 @@ class CompressedViewerNode(Node):
                     position=(0.0, -2.0, 2.0)
                 )
                 
-                # Combine pattern markers and info markers
+                # Use pattern markers only (no info markers for consistency with occupied_voxel_markers)
                 combined_markers = MarkerArray()
                 if pattern_markers and len(pattern_markers.markers) > 0:
                     combined_markers.markers.extend(pattern_markers.markers)
-                if info_markers and len(info_markers.markers) > 0:
-                    combined_markers.markers.extend(info_markers.markers)
+                # Skip info markers to match occupied_voxel_markers format
+                # if info_markers and len(info_markers.markers) > 0:
+                #     combined_markers.markers.extend(info_markers.markers)
                 
                 if len(combined_markers.markers) > 0:
                     # 重複publish防止チェック
@@ -479,6 +480,17 @@ class CompressedViewerNode(Node):
                         self.get_logger().warn(f"Skipping pattern publish (too frequent: {time_since_last:.3f}s)")
                         return
                     
+                    # Debug: Check marker types before publishing
+                    marker_types = {}
+                    for marker in combined_markers.markers:
+                        mtype = marker.type
+                        if mtype not in marker_types:
+                            marker_types[mtype] = 0
+                        marker_types[mtype] += 1
+                    
+                    self.get_logger().info(f"DEBUG: Publishing MarkerArray with {len(combined_markers.markers)} markers")
+                    self.get_logger().info(f"DEBUG: Marker types: {marker_types}")
+                    
                     self.pattern_markers_pub.publish(combined_markers)
                     self.last_pattern_publish_time = current_time
                     self.pattern_publish_count += 1
@@ -486,7 +498,8 @@ class CompressedViewerNode(Node):
                     # 日本語でpublish確認メッセージ
                     print("="*50)
                     print("🔵 pattern_markersをpublishしました")
-                    print(f"  マーカー数: {len(pattern_markers.markers)}")
+                    print(f"  マーカー数: {len(combined_markers.markers)} (実際のMarkerArray)")
+                    print(f"  pattern_markers数: {len(pattern_markers.markers) if pattern_markers else 0}")
                     print(f"  タイプ: {'空間配置' if use_spatial else '線形配置'}")
                     print(f"  累計publish回数: {self.pattern_publish_count}")
                     print(f"  前回からの経過時間: {time_since_last:.2f}秒")
