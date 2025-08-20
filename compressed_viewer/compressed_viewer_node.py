@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """
-Main node for compressed point cloud viewer
-Subscribes to compressed point cloud data and publishes visualization
+Refactored compressed viewer node - cleaner and more efficient
 """
 
 import rclpy
@@ -9,99 +8,71 @@ from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy
 import time
 import numpy as np
-import gc  # ガベージコレクション
 
 # ROS messages
-from sensor_msgs.msg import PointCloud2
 from visualization_msgs.msg import MarkerArray
 from std_msgs.msg import Header
 
-# Import compressed point cloud messages from pointcloud_compressor package
-# These need to be built first with colcon build
+# Import messages
 try:
     from pointcloud_compressor.msg import PatternDictionary
-    # CompressedPointCloud message doesn't exist yet, set to None
-    CompressedPointCloud = None
 except ImportError:
-    # Fallback for development/testing
-    print("Warning: pointcloud_compressor messages not found. Using mock message.")
-    CompressedPointCloud = None
+    print("Warning: pointcloud_compressor messages not found")
     PatternDictionary = None
 
 # Local modules
-from .decompressor import Decompressor
-from .visualizer import PointCloudVisualizer
-from .statistics_display import StatisticsDisplay
 from .pattern_dictionary_decompressor import PatternDictionaryDecompressor
 from .pattern_marker_visualizer import PatternMarkerVisualizer
 
 
 class CompressedViewerNode(Node):
-    """ROS2 node for viewing compressed point clouds"""
+    """Refactored compressed viewer node for pattern visualization"""
     
     def __init__(self):
         """Initialize the compressed viewer node"""
         super().__init__('compressed_viewer_node')
         
-        # Publish tracking for memory leak detection
-        self.last_pattern_publish_time = 0
-        self.pattern_publish_count = 0
-        self.cached_patterns = None  # パターンキャッシュ
-        self.cached_pattern_hash = None
-        
         # Declare parameters
-        self.declare_parameter('input_topic', 'compressed_pointcloud')
-        self.declare_parameter('pattern_dictionary_topic', 'pattern_dictionary')
-        self.declare_parameter('pointcloud_topic', 'decompressed_pointcloud')
-        self.declare_parameter('markers_topic', 'visualization_markers')
-        self.declare_parameter('pattern_markers_topic', 'pattern_markers')
-        self.declare_parameter('statistics_topic', 'statistics_markers')
-        self.declare_parameter('frame_id', 'map')
-        self.declare_parameter('visualization_mode', 'points')  # points, voxels, both
-        self.declare_parameter('show_statistics', True)
-        self.declare_parameter('show_bounding_box', True)
-        self.declare_parameter('show_pattern_visualization', True)
-        self.declare_parameter('pattern_spacing', 3.0)
-        self.declare_parameter('pattern_voxel_size', 0.1)
-        self.declare_parameter('point_size', 0.01)
-        self.declare_parameter('point_color_r', 0.0)
-        self.declare_parameter('point_color_g', 1.0)
-        self.declare_parameter('point_color_b', 0.0)
-        self.declare_parameter('point_color_a', 1.0)
-        self.declare_parameter('memory_cleanup_interval', 10)  # ガベージコレクション間隔
+        self._declare_parameters()
         
         # Get parameters
-        self.input_topic = self.get_parameter('input_topic').value
-        self.pattern_dictionary_topic = self.get_parameter('pattern_dictionary_topic').value
-        self.pointcloud_topic = self.get_parameter('pointcloud_topic').value
-        self.markers_topic = self.get_parameter('markers_topic').value
-        self.pattern_markers_topic = self.get_parameter('pattern_markers_topic').value
-        self.statistics_topic = self.get_parameter('statistics_topic').value
-        self.frame_id = self.get_parameter('frame_id').value
-        self.visualization_mode = self.get_parameter('visualization_mode').value
-        self.show_statistics = self.get_parameter('show_statistics').value
-        self.show_bounding_box = self.get_parameter('show_bounding_box').value
-        self.show_pattern_visualization = self.get_parameter('show_pattern_visualization').value
-        self.pattern_spacing = self.get_parameter('pattern_spacing').value
-        self.pattern_voxel_size = self.get_parameter('pattern_voxel_size').value
-        self.point_size = self.get_parameter('point_size').value
-        self.memory_cleanup_interval = self.get_parameter('memory_cleanup_interval').value
-        
-        point_color = (
-            self.get_parameter('point_color_r').value,
-            self.get_parameter('point_color_g').value,
-            self.get_parameter('point_color_b').value,
-            self.get_parameter('point_color_a').value
-        )
+        self._get_parameters()
         
         # Initialize components
-        self.decompressor = Decompressor()
-        self.visualizer = PointCloudVisualizer(frame_id=self.frame_id)
-        self.statistics_display = StatisticsDisplay()
-        self.statistics_display.frame_id = self.frame_id
         self.pattern_decompressor = PatternDictionaryDecompressor()
         self.pattern_visualizer = PatternMarkerVisualizer(frame_id=self.frame_id)
         
+        # State management
+        self.cached_patterns = None
+        self.cached_pattern_hash = None
+        self.last_publish_time = 0
+        self.min_publish_interval = 0.1  # Minimum 100ms between publishes
+        
+        # Setup ROS communication
+        self._setup_ros_communication()
+        
+        self.get_logger().info("Compressed Viewer Node initialized")
+        self.get_logger().info(f"Subscribing to: {self.pattern_dictionary_topic}")
+        self.get_logger().info(f"Publishing to: {self.pattern_markers_topic}")
+        
+    def _declare_parameters(self):
+        """Declare all ROS parameters"""
+        self.declare_parameter('pattern_dictionary_topic', 'pattern_dictionary')
+        self.declare_parameter('pattern_markers_topic', 'pattern_markers')
+        self.declare_parameter('frame_id', 'map')
+        self.declare_parameter('pattern_voxel_size', 0.1)
+        self.declare_parameter('show_pattern_visualization', True)
+        
+    def _get_parameters(self):
+        """Get all parameter values"""
+        self.pattern_dictionary_topic = self.get_parameter('pattern_dictionary_topic').value
+        self.pattern_markers_topic = self.get_parameter('pattern_markers_topic').value
+        self.frame_id = self.get_parameter('frame_id').value
+        self.pattern_voxel_size = self.get_parameter('pattern_voxel_size').value
+        self.show_pattern_visualization = self.get_parameter('show_pattern_visualization').value
+        
+    def _setup_ros_communication(self):
+        """Setup ROS subscribers and publishers"""
         # QoS settings
         qos = QoSProfile(
             reliability=ReliabilityPolicy.RELIABLE,
@@ -109,17 +80,7 @@ class CompressedViewerNode(Node):
             depth=10
         )
         
-        # Create subscribers
-        if CompressedPointCloud is not None:
-            self.compressed_sub = self.create_subscription(
-                CompressedPointCloud,
-                self.input_topic,
-                self.compressed_callback,
-                qos
-            )
-        else:
-            self.get_logger().warn("CompressedPointCloud message not available")
-            
+        # Create subscriber
         if PatternDictionary is not None:
             self.pattern_sub = self.create_subscription(
                 PatternDictionary,
@@ -128,410 +89,137 @@ class CompressedViewerNode(Node):
                 qos
             )
         else:
-            self.get_logger().warn("PatternDictionary message not available")
-        
-        # Create publishers
-        self.pointcloud_pub = self.create_publisher(
-            PointCloud2,
-            self.pointcloud_topic,
-            qos
-        )
-        
-        self.markers_pub = self.create_publisher(
-            MarkerArray,
-            self.markers_topic,
-            qos
-        )
-        
+            self.get_logger().error("PatternDictionary message not available")
+            
+        # Create publisher
         self.pattern_markers_pub = self.create_publisher(
             MarkerArray,
             self.pattern_markers_topic,
             qos
         )
         
-        self.statistics_pub = self.create_publisher(
-            MarkerArray,
-            self.statistics_topic,
-            qos
-        )
-        
-        # Statistics
-        self.message_count = 0
-        self.total_decompression_time = 0.0
-        self.point_color = point_color
-        
-        # Memory cleanup timer
-        self.create_timer(self.memory_cleanup_interval, self.cleanup_memory)
-        
-        self.get_logger().info(f"Compressed Viewer Node initialized")
-        self.get_logger().info(f"Subscribing to: {self.input_topic}, {self.pattern_dictionary_topic}")
-        self.get_logger().info(f"Publishing to: {self.pointcloud_topic}, {self.markers_topic}, {self.pattern_markers_topic}")
-        self.get_logger().info(f"Visualization mode: {self.visualization_mode}")
-        self.get_logger().info(f"Pattern visualization: {self.show_pattern_visualization}")
-        
-    def cleanup_memory(self):
-        """定期的にメモリをクリーンアップ"""
-        gc.collect()
-        self.get_logger().debug(f"Memory cleanup performed (message count: {self.message_count})")
-        
-    def compressed_callback(self, msg: 'CompressedPointCloud'):
-        """
-        Callback for compressed point cloud messages
-        
-        Args:
-            msg: CompressedPointCloud message
-        """
-        self.message_count += 1
-        self.get_logger().info(f"Received compressed message #{self.message_count}")
-        
-        try:
-            # Start timing
-            start_time = time.time()
-            
-            # Debug: Print message details
-            self.get_logger().info(f"Block indices count: {len(msg.block_indices)}")
-            self.get_logger().info(f"Pattern dictionary patterns: {msg.pattern_dictionary.num_patterns}")
-            self.get_logger().info(f"Original points: {msg.original_point_count}")
-            self.get_logger().info(f"Grid dimensions: {msg.voxel_grid_dimensions.x}x{msg.voxel_grid_dimensions.y}x{msg.voxel_grid_dimensions.z}")
-            
-            # Decompress the point cloud
-            points = self.decompressor.decompress(msg)
-            
-            # Calculate decompression time
-            decompression_time = time.time() - start_time
-            self.total_decompression_time += decompression_time
-            
-            # Update statistics
-            self.statistics_display.update_statistics(msg, decompression_time)
-            self.statistics_display.statistics['reconstructed_points'] = len(points)
-            
-            self.get_logger().info(
-                f"Decompressed {len(points)} points in {decompression_time:.3f}s"
-            )
-            
-            # Create header
-            header = Header()
-            header.stamp = self.get_clock().now().to_msg()
-            header.frame_id = self.frame_id
-            
-            # Publish point cloud
-            if len(points) > 0:
-                self.get_logger().info(f"Creating PointCloud2 message with {len(points)} points")
-                pointcloud_msg = self.visualizer.create_point_cloud2(points, header)
-                self.get_logger().info(f"PointCloud2 message created: width={pointcloud_msg.width}, height={pointcloud_msg.height}, data_size={len(pointcloud_msg.data)}")
-                self.pointcloud_pub.publish(pointcloud_msg)
-                self.get_logger().info(f"Published PointCloud2 to {self.pointcloud_topic}")
-                
-                # Create and publish markers based on visualization mode
-                marker_array = MarkerArray()
-                
-                if self.visualization_mode in ['points', 'both']:
-                    points_markers = self.visualizer.create_marker_array(
-                        points,
-                        color=self.point_color,
-                        size=self.point_size,
-                        marker_type='cube'
-                    )
-                    marker_array.markers.extend(points_markers.markers)
-                    
-                if self.visualization_mode in ['voxels', 'both']:
-                    # Also show voxel grid if requested
-                    # This would require keeping the voxel grid from decompression
-                    pass
-                    
-                if self.show_bounding_box and len(points) > 0:
-                    # Calculate bounding box
-                    min_bound = np.min(points, axis=0)
-                    max_bound = np.max(points, axis=0)
-                    
-                    bbox_marker = self.visualizer.create_bounding_box(
-                        tuple(min_bound),
-                        tuple(max_bound),
-                        color=(1.0, 1.0, 0.0, 0.5)
-                    )
-                    marker_array.markers.append(bbox_marker)
-                    
-                if len(marker_array.markers) > 0:
-                    self.markers_pub.publish(marker_array)
-                    
-            # Publish statistics if enabled
-            if self.show_statistics:
-                stats_markers = MarkerArray()
-                
-                # Create info panel
-                panel_markers = self.statistics_display.create_info_panel_markers(
-                    position=(2.0, 0.0, 1.5)
-                )
-                stats_markers.markers.extend(panel_markers)
-                
-                self.statistics_pub.publish(stats_markers)
-                
-                # Print statistics to console
-                self.statistics_display.print_statistics()
-                
-            # Process PatternDictionary from the compressed message for pattern visualization
-            if self.show_pattern_visualization and hasattr(msg, 'pattern_dictionary'):
-                try:
-                    self.get_logger().info("Processing PatternDictionary from compressed message")
-                    # Use the original voxel size from compression settings for accurate visualization
-                    original_voxel_size = msg.compression_settings.voxel_size
-                    self.get_logger().info(f"Using original voxel size: {original_voxel_size}")
-                    # Pass full compressed message for spatial positioning
-                    self.process_pattern_dictionary(msg.pattern_dictionary, 
-                                                   voxel_size=original_voxel_size,
-                                                   compressed_msg=msg)
-                except Exception as e:
-                    self.get_logger().error(f"Error processing PatternDictionary: {str(e)}")
-                
-        except Exception as e:
-            self.get_logger().error(f"Error processing compressed message: {str(e)}")
-            import traceback
-            self.get_logger().error(traceback.format_exc())
-            
-        finally:
-            # メモリ解放を促進
-            if self.message_count % 10 == 0:
-                gc.collect()
-            
     def pattern_dictionary_callback(self, msg: 'PatternDictionary'):
         """
-        Callback for PatternDictionary messages
+        Process PatternDictionary messages
         
         Args:
             msg: PatternDictionary message
         """
-        # Use fallback voxel size for standalone PatternDictionary messages
-        fallback_voxel_size = self.pattern_voxel_size
-        self.process_pattern_dictionary(msg, voxel_size=fallback_voxel_size)
-        
-    def process_pattern_dictionary(self, pattern_dict, voxel_size=None, compressed_msg=None):
-        """
-        Process PatternDictionary data for visualization
-        
-        Args:
-            pattern_dict: PatternDictionary message or data
-            voxel_size: Voxel size to use for visualization (if None, uses parameter)
-            compressed_msg: Full CompressedPointCloud message (for spatial positioning)
-        """
         if not self.show_pattern_visualization:
             return
             
-        # Use voxel_size from PatternDictionary if available, otherwise use provided or fallback
-        if hasattr(pattern_dict, 'voxel_size') and pattern_dict.voxel_size > 0:
-            actual_voxel_size = pattern_dict.voxel_size
-        else:
-            actual_voxel_size = voxel_size if voxel_size is not None else self.pattern_voxel_size
-        
-        self.get_logger().info(f"Processing PatternDictionary with {pattern_dict.num_patterns} patterns")
-        self.get_logger().info(f"Using voxel size: {actual_voxel_size} for pattern visualization")
-        
         try:
-            # Start timing
-            start_time = time.time()
+            # Rate limiting
+            current_time = time.time()
+            if current_time - self.last_publish_time < self.min_publish_interval:
+                return
+                
+            # Process the pattern dictionary
+            marker_array = self._process_pattern_dictionary(msg)
             
-            # パターンのハッシュを計算してキャッシュを確認
-            pattern_hash = hash(bytes(pattern_dict.dictionary_data))
-            
-            if self.cached_pattern_hash == pattern_hash and self.cached_patterns is not None:
-                self.get_logger().info("Using cached patterns")
-                patterns = self.cached_patterns
-            else:
-                # Decompress pattern dictionary into 3D boolean arrays
-                patterns = self.pattern_decompressor.decompress_pattern_dictionary(
-                    pattern_dict, 
-                    validate_checksum=False  # Skip checksum for now as it may not be properly set
-                )
-                # キャッシュを更新
-                self.cached_patterns = patterns
-                self.cached_pattern_hash = pattern_hash
-            
-            # Calculate decompression time
-            decompression_time = time.time() - start_time
-            
-            self.get_logger().info(
-                f"Decompressed {len(patterns)} patterns in {decompression_time:.3f}s"
-            )
-            
-            if len(patterns) > 0:
-                # Check if we have spatial information from CompressedPointCloud or PatternDictionary
-                use_spatial = False
+            # Publish if we have markers
+            if marker_array and len(marker_array.markers) > 0:
+                self.pattern_markers_pub.publish(marker_array)
+                self.last_publish_time = current_time
                 
-                # First, check if we have spatial info from CompressedPointCloud
-                if compressed_msg and hasattr(compressed_msg, 'block_indices'):
-                    if len(compressed_msg.block_indices) == 0:
-                        self.get_logger().info("No blocks to visualize (all filtered by min_points_threshold)")
-                        return  # Exit early - no markers to show
-                    
-                    # Check if block dimensions are valid
-                    if compressed_msg.blocks_x > 0 and compressed_msg.blocks_y > 0 and compressed_msg.blocks_z > 0:
-                        use_spatial = True
-                        self.get_logger().info("Using spatial pattern visualization with actual block positions")
-                        self.get_logger().info(f"Block indices count: {len(compressed_msg.block_indices)}")
-                    else:
-                        self.get_logger().warn(f"Invalid block dimensions: {compressed_msg.blocks_x}x{compressed_msg.blocks_y}x{compressed_msg.blocks_z}")
-                
-                # If no compressed_msg, check if PatternDictionary has spatial info
-                elif pattern_dict and hasattr(pattern_dict, 'blocks_x'):
-                    # Check if PatternDictionary has valid spatial information
-                    if (pattern_dict.blocks_x > 0 and pattern_dict.blocks_y > 0 and pattern_dict.blocks_z > 0 and
-                        len(pattern_dict.block_indices) > 0):
-                        use_spatial = True
-                        self.get_logger().info("Using spatial pattern visualization from PatternDictionary")
-                        self.get_logger().info(f"Block indices count: {len(pattern_dict.block_indices)}")
-                
-                if use_spatial:
-                    # Get block dimensions and origin from either compressed_msg or pattern_msg
-                    if compressed_msg:
-                        blocks_dims = (compressed_msg.blocks_x, compressed_msg.blocks_y, compressed_msg.blocks_z)
-                        grid_origin = (
-                            compressed_msg.voxel_grid_origin.x,
-                            compressed_msg.voxel_grid_origin.y,
-                            compressed_msg.voxel_grid_origin.z
-                        )
-                        block_size = compressed_msg.compression_settings.block_size
-                        block_indices = compressed_msg.block_indices
-                    else:
-                        # Use PatternDictionary spatial info
-                        blocks_dims = (pattern_dict.blocks_x, pattern_dict.blocks_y, pattern_dict.blocks_z)
-                        grid_origin = (
-                            pattern_dict.voxel_grid_origin.x,
-                            pattern_dict.voxel_grid_origin.y,
-                            pattern_dict.voxel_grid_origin.z
-                        )
-                        block_size = pattern_dict.block_size
-                        block_indices = pattern_dict.block_indices
-                    
-                    # Create spatial pattern markers
-                    pattern_markers = self.pattern_visualizer.create_spatial_pattern_markers(
-                        patterns,
-                        block_indices,
-                        blocks_dims,
-                        actual_voxel_size,
-                        block_size,
-                        grid_origin
-                    )
-                    
-                    self.get_logger().info(f"Created {len(pattern_markers.markers)} spatial pattern markers")
-                    
-                    # Create info text
-                    info_text = f"Spatial Pattern Visualization\n"
-                    info_text += f"Total blocks: {len(block_indices)}\n"
-                    info_text += f"Block dimensions: {blocks_dims[0]}x{blocks_dims[1]}x{blocks_dims[2]}\n"
-                    info_text += f"Unique patterns: {len(patterns)}\n"
-                    info_text += f"Voxel size: {actual_voxel_size:.3f}m\n"
-                    info_text += f"Block size: {block_size}x{block_size}x{block_size} voxels\n"
-                    
-                    # Check if we actually created markers
-                    if len(pattern_markers.markers) == 0:
-                        self.get_logger().warn("No spatial markers created, falling back to linear display")
-                        use_spatial = False
-                    
-                if not use_spatial:
-                    # Fallback to linear pattern display (for standalone PatternDictionary messages)
-                    # Only show if we don't have compressed_msg (standalone) or if we have valid blocks
-                    if compressed_msg is None:
-                        # Standalone PatternDictionary message - show linear display
-                        self.get_logger().info("Using linear pattern visualization (standalone PatternDictionary)")
-                    else:
-                        # We have compressed_msg but no valid spatial info - likely all filtered
-                        self.get_logger().info("No valid blocks to display (possibly filtered by min_points_threshold)")
-                        return  # Exit - don't show markers
-                    
-                    # Create pattern markers (limit to first 20 patterns for performance)
-                    display_patterns = patterns[:20]
-                    pattern_markers = self.pattern_visualizer.create_pattern_markers(
-                        display_patterns,
-                        pattern_spacing=self.pattern_spacing,
-                        voxel_size=actual_voxel_size
-                    )
-                    
-                    # Create info text
-                    info_text = f"Pattern Dictionary: {len(patterns)} patterns (showing first {len(display_patterns)})\n"
-                    info_text += f"Voxel size: {actual_voxel_size:.3f}m\n"
-                    info_text += f"Block size: {display_patterns[0].shape[0] if display_patterns else 'N/A'}\n"
-                    for i, pattern in enumerate(display_patterns):
-                        voxel_count = int(np.sum(pattern))
-                        total_voxels = pattern.size
-                        density = (voxel_count / total_voxels) * 100 if total_voxels > 0 else 0
-                        info_text += f"Pattern {i}: {voxel_count}/{total_voxels} voxels ({density:.1f}%)\n"
-                
-                # Create and publish info markers
-                info_markers = self.pattern_visualizer.create_info_markers(
-                    patterns[:20],  # Just for positioning
-                    info_text,
-                    position=(0.0, -2.0, 2.0)
-                )
-                
-                # Use pattern markers only (no info markers for consistency with occupied_voxel_markers)
-                combined_markers = MarkerArray()
-                if pattern_markers and len(pattern_markers.markers) > 0:
-                    combined_markers.markers.extend(pattern_markers.markers)
-                # Skip info markers to match occupied_voxel_markers format
-                # if info_markers and len(info_markers.markers) > 0:
-                #     combined_markers.markers.extend(info_markers.markers)
-                
-                if len(combined_markers.markers) > 0:
-                    # 重複publish防止チェック
-                    current_time = time.time()
-                    time_since_last = current_time - self.last_pattern_publish_time
-                    
-                    # 最小間隔チェック（0.1秒未満の場合はスキップ）
-                    if time_since_last < 0.1:
-                        self.get_logger().warn(f"Skipping pattern publish (too frequent: {time_since_last:.3f}s)")
-                        return
-                    
-                    # Debug: Check marker types before publishing
-                    marker_types = {}
-                    for marker in combined_markers.markers:
-                        mtype = marker.type
-                        if mtype not in marker_types:
-                            marker_types[mtype] = 0
-                        marker_types[mtype] += 1
-                    
-                    self.get_logger().info(f"DEBUG: Publishing MarkerArray with {len(combined_markers.markers)} markers")
-                    self.get_logger().info(f"DEBUG: Marker types: {marker_types}")
-                    
-                    self.pattern_markers_pub.publish(combined_markers)
-                    self.last_pattern_publish_time = current_time
-                    self.pattern_publish_count += 1
-                    
-                    # 日本語でpublish確認メッセージ
-                    print("="*50)
-                    print("🔵 pattern_markersをpublishしました")
-                    print(f"  マーカー数: {len(combined_markers.markers)} (実際のMarkerArray)")
-                    print(f"  pattern_markers数: {len(pattern_markers.markers) if pattern_markers else 0}")
-                    print(f"  タイプ: {'空間配置' if use_spatial else '線形配置'}")
-                    print(f"  累計publish回数: {self.pattern_publish_count}")
-                    print(f"  前回からの経過時間: {time_since_last:.2f}秒")
-                    print("="*50)
-                    
-                    if use_spatial:
-                        self.get_logger().info(f"Published {len(pattern_markers.markers)} spatial pattern markers for {len(block_indices)} blocks")
-                    else:
-                        self.get_logger().info(f"Published {len(pattern_markers.markers)} linear pattern markers")
-                else:
-                    self.get_logger().warn("No markers to publish")
-                
-            else:
-                self.get_logger().warn("No patterns found in PatternDictionary")
+                # Log marker information
+                self._log_marker_info(marker_array)
                 
         except Exception as e:
-            self.get_logger().error(f"Error processing PatternDictionary: {str(e)}")
-            import traceback
-            self.get_logger().error(traceback.format_exc())
+            self.get_logger().error(f"Error in pattern_dictionary_callback: {str(e)}")
             
-    def clear_visualization(self):
-        """Clear all visualization markers"""
-        clear_markers = self.visualizer.clear_markers()
-        self.markers_pub.publish(clear_markers)
+    def _process_pattern_dictionary(self, msg: 'PatternDictionary') -> MarkerArray:
+        """
+        Process PatternDictionary and create markers
         
-        # Clear pattern markers
-        pattern_clear_markers = self.pattern_visualizer.clear_markers()
-        self.pattern_markers_pub.publish(pattern_clear_markers)
+        Args:
+            msg: PatternDictionary message
+            
+        Returns:
+            MarkerArray with pattern markers
+        """
+        # Determine voxel size
+        voxel_size = self._get_voxel_size(msg)
         
-        stats_clear = MarkerArray()
-        stats_clear.markers = clear_markers.markers.copy()
-        self.statistics_pub.publish(stats_clear)
+        self.get_logger().info(f"Processing {msg.num_patterns} patterns with voxel_size={voxel_size:.3f}")
+        
+        # Get patterns (from cache if available)
+        patterns = self._get_patterns(msg)
+        
+        if not patterns:
+            self.get_logger().warn("No patterns to process")
+            return MarkerArray()
+            
+        # Create spatial markers if spatial information is available
+        if self._has_spatial_info(msg):
+            return self._create_spatial_markers(msg, patterns, voxel_size)
+        else:
+            self.get_logger().warn("No spatial information available")
+            return MarkerArray()
+            
+    def _get_voxel_size(self, msg: 'PatternDictionary') -> float:
+        """Get voxel size from message or use default"""
+        if hasattr(msg, 'voxel_size') and msg.voxel_size > 0:
+            return msg.voxel_size
+        return self.pattern_voxel_size
+        
+    def _get_patterns(self, msg: 'PatternDictionary'):
+        """Get patterns from cache or decompress"""
+        pattern_hash = hash(bytes(msg.dictionary_data))
+        
+        if self.cached_pattern_hash == pattern_hash and self.cached_patterns is not None:
+            self.get_logger().debug("Using cached patterns")
+            return self.cached_patterns
+            
+        # Decompress patterns
+        patterns = self.pattern_decompressor.decompress_pattern_dictionary(
+            msg, 
+            validate_checksum=False
+        )
+        
+        # Update cache
+        self.cached_patterns = patterns
+        self.cached_pattern_hash = pattern_hash
+        
+        return patterns
+        
+    def _has_spatial_info(self, msg: 'PatternDictionary') -> bool:
+        """Check if message has valid spatial information"""
+        return (hasattr(msg, 'blocks_x') and 
+                msg.blocks_x > 0 and 
+                msg.blocks_y > 0 and 
+                msg.blocks_z > 0 and
+                len(msg.block_indices) > 0)
+                
+    def _create_spatial_markers(self, msg: 'PatternDictionary', patterns, voxel_size: float) -> MarkerArray:
+        """Create spatial pattern markers"""
+        blocks_dims = (msg.blocks_x, msg.blocks_y, msg.blocks_z)
+        grid_origin = (
+            msg.voxel_grid_origin.x,
+            msg.voxel_grid_origin.y,
+            msg.voxel_grid_origin.z
+        )
+        
+        return self.pattern_visualizer.create_spatial_pattern_markers(
+            patterns,
+            msg.block_indices,
+            blocks_dims,
+            voxel_size,
+            msg.block_size,
+            grid_origin
+        )
+        
+    def _log_marker_info(self, marker_array: MarkerArray):
+        """Log information about published markers"""
+        # Count marker types
+        marker_types = {}
+        for marker in marker_array.markers:
+            mtype = marker.type
+            marker_types[mtype] = marker_types.get(mtype, 0) + 1
+            
+        self.get_logger().info(f"Published {len(marker_array.markers)} markers")
+        if marker_types:
+            self.get_logger().debug(f"Marker types: {marker_types}")
 
 
 def main(args=None):
@@ -545,11 +233,7 @@ def main(args=None):
         pass
     except Exception as e:
         print(f"Error: {e}")
-        import traceback
-        traceback.print_exc()
     finally:
-        if 'node' in locals():
-            node.destroy_node()
         rclpy.shutdown()
 
 
