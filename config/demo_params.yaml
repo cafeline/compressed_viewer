@@ -1,19 +1,21 @@
 # Demo configuration for compressed viewer with pattern visualization
 # This configuration is optimized for demonstration purposes
 
-pointcloud_compressor_single_shot:
+pointcloud_compressor_node:
   ros__parameters:
     # Input/Output settings
     input_pcd_file: "/home/ryo/tsudanuma/maps/tsudanuma-challenge-all.ply"
-    # input_pcd_file: "/home/ryo/image_compressor_ws/src/tmp/bunny/data/bun000.ply"
-    output_prefix: "/tmp/compressed_demo"
+    voxel_size: 3.0
+    min_points_threshold: 100
 
-    # Compression settings
-    voxel_size: 5.01
+    # input_file: "/home/ryo/image_compressor_ws/src/tmp/bunny/data/bun000.ply"
+    # voxel_size: 0.01
+    # min_points_threshold: 1
+
     block_size: 8
     target_patterns: 128
     use_8bit_indices: true
-    min_points_threshold: 100
+    output_prefix: "/tmp/compressed_demo"
 
     # Publishing settings
     publish_once: true
@@ -52,7 +54,7 @@ pointcloud_compressor_continuous:
     output_topic: "compressed_pointcloud"
     pattern_topic: "pattern_dictionary"
 
-compressed_viewer_single_shot:
+compressed_viewer_node:
   ros__parameters:
     # Input topics
     input_topic: "compressed_pointcloud"
