@@ -5,7 +5,7 @@ from glob import glob
 package_name = 'compressed_viewer'
 
 setup(
-    name=package_name,
+    name='compressed_viewer',
     version='1.0.0',
     packages=find_packages(exclude=['test']),
     data_files=[
@@ -13,13 +13,13 @@ setup(
             ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
         # Include launch files
-        (os.path.join('share', package_name, 'launch'), 
+        (os.path.join('share', package_name, 'launch'),
             glob('launch/*.py')),
         # Include config files
-        (os.path.join('share', package_name, 'config'), 
+        (os.path.join('share', package_name, 'config'),
             glob('config/*.yaml')),
         # Include RViz config files
-        (os.path.join('share', package_name, 'rviz'), 
+        (os.path.join('share', package_name, 'rviz'),
             glob('rviz/*.rviz')),
     ],
     install_requires=['setuptools', 'numpy'],
